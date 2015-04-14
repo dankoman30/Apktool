@@ -292,6 +292,12 @@ public class ARSCDecoder {
             screenHeightDp = mIn.readShort();
         }
 
+        byte uiThemeMode = 0;
+        if (size >= 50) {
+            uiThemeMode = mIn.readByte();
+            mIn.skipBytes(1);
+        }
+
         char[] localeScript = null;
         char[] localeVariant = null;
         if (size >= 48) {
@@ -319,7 +325,7 @@ public class ARSCDecoder {
         return new ResConfigFlags(mcc, mnc, language, country,
                 orientation, touchscreen, density, keyboard, navigation,
                 inputFlags, screenWidth, screenHeight, sdkVersion,
-                screenLayout, uiMode, smallestScreenWidthDp, screenWidthDp,
+                screenLayout, uiThemeMode, uiMode, smallestScreenWidthDp, screenWidthDp,
                 screenHeightDp, localeScript, localeVariant, isInvalid);
     }
 
@@ -448,7 +454,7 @@ public class ARSCDecoder {
     }
 
     private static final Logger LOGGER = Logger.getLogger(ARSCDecoder.class.getName());
-    private static final int KNOWN_CONFIG_BYTES = 48;
+    private static final int KNOWN_CONFIG_BYTES = 50;
 
     public static class ARSCData {
 
