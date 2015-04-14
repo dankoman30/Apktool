@@ -430,12 +430,6 @@ final public class AndrolibResources {
             cmd.add("--debug-mode");
         }
 
-        // force package id so that some frameworks build with correct id
-        // disable if user adds own aapt (can't know if they have this feature)
-        if (mPackageId != null && ! customAapt && ! mSharedLibrary) {
-            cmd.add("--forced-package-id");
-            cmd.add(mPackageId);
-        }
         if (mSharedLibrary) {
             cmd.add("--shared-lib");
         }
