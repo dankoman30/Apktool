@@ -238,10 +238,10 @@ public class ResConfigFlags {
         }
         switch (uiThemeMode) {
             case UI_THEME_MODE_HOLO_DARK:
-                ret.append("-holodark");
+                ret.append("-darktheme");
                 break;
             case UI_THEME_MODE_HOLO_LIGHT:
-                ret.append("-hololight");
+                ret.append("-lighttheme");
                 break;
         }
         switch (uiMode & MASK_UI_MODE_TYPE) {
