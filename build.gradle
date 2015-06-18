@@ -16,8 +16,8 @@
 apply plugin: 'maven'
 apply from: 'gradle/functions.gradle'
 
-def apktoolversion_major = '2.0.0'
-def apktoolversion_minor = 'RC4';
+def apktoolversion_major = '2.0.1'
+def apktoolversion_minor = 'SNAPSHOT';
 
 allprojects {
     apply plugin: 'java'
@@ -39,8 +39,12 @@ if (!('release' in gradle.startParameter.taskNames)) {
     }
 } else {
     project.ext.set("hash", "")
-    project.ext.set("apktool_version", apktoolversion_major + "-" + apktoolversion_minor);
-    println "Building RELEASE (" + getCheckedOutBranch() + "): " + apktoolversion_major + "-" + apktoolversion_minor;
+    if (apktoolversion_minor.length() > 0) {
+        project.ext.set("apktool_version", apktoolversion_major + "-" + apktoolversion_minor);
+    } else {
+        project.ext.set("apktool_version", apktoolversion_major);
+    }
+    println "Building RELEASE (" + getCheckedOutBranch() + "): " + project.ext.apktool_version;
 }
 
 build.doFirst {
@@ -57,7 +61,7 @@ build.doFirst {
 }
 
 task wrapper(type: Wrapper) {
-    gradleVersion = '2.1'
+    gradleVersion = '2.3'
 }
 
 // used for official releases only. Please don't use
@@ -93,7 +97,7 @@ subprojects {
                 guava: 'com.google.guava:guava:14.0',
                 jflex: 'de.jflex:jflex:1.4.3',
                 junit: 'junit:junit:4.6',
-                proguard: 'net.sf.proguard:proguard-base:5.2',
+                proguard_gradle: 'net.sf.proguard:proguard-gradle:5.2.1',
                 snakeyaml: 'org.yaml:snakeyaml:1.12',
                 xmlpull: 'xpp3:xpp3:1.1.4c',
                 xmlunit: 'xmlunit:xmlunit:1.3',

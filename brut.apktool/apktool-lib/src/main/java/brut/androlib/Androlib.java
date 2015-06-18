@@ -22,6 +22,7 @@ import brut.androlib.res.data.ResPackage;
 import brut.androlib.res.data.ResTable;
 import brut.androlib.res.data.ResUnknownFiles;
 import brut.androlib.res.util.ExtFile;
+import brut.androlib.res.xml.ResXmlPatcher;
 import brut.androlib.src.SmaliBuilder;
 import brut.androlib.src.SmaliDecoder;
 import brut.common.BrutException;
@@ -36,6 +37,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
+import org.apache.commons.io.IOUtils;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
@@ -230,7 +232,7 @@ public class Androlib {
 
         try (
                 Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(
-                        new File(mOutDir, "apktool.yml")), "UTF-8"));
+                        new File(mOutDir, "apktool.yml")), "UTF-8"))
         ) {
             yaml.dump(meta, writer);
         } catch (IOException ex) {
@@ -241,7 +243,7 @@ public class Androlib {
     public Map<String, Object> readMetaFile(ExtFile appDir)
             throws AndrolibException {
         try(
-                InputStream in = appDir.getDirectory().getFileInput("apktool.yml");
+                InputStream in = appDir.getDirectory().getFileInput("apktool.yml")
         ) {
             Yaml yaml = new Yaml();
             return (Map<String, Object>) yaml.load(in);
@@ -279,8 +281,11 @@ public class Androlib {
         new File(appDir, APK_DIRNAME).mkdirs();
         buildSources(appDir);
         buildNonDefaultSources(appDir);
+        ResXmlPatcher.fixingPublicAttrsInProviderAttributes(new File(appDir, "AndroidManifest.xml"));
         buildResources(appDir, (Map<String, Object>) meta.get("usesFramework"));
+
         buildLib(appDir);
+        buildLibs(appDir);
         buildCopyOriginalFiles(appDir);
         buildApk(appDir, outFile);
 
@@ -408,8 +413,7 @@ public class Androlib {
             if (apkOptions.forceBuildAll || isModified(newFiles(APK_RESOURCES_FILENAMES, appDir),
                     newFiles(APK_RESOURCES_FILENAMES, apkDir))) {
                 LOGGER.info("Copying raw resources...");
-                appDir.getDirectory()
-                        .copyToDir(apkDir, APK_RESOURCES_FILENAMES);
+                appDir.getDirectory().copyToDir(apkDir, APK_RESOURCES_FILENAMES);
             }
             return true;
         } catch (DirectoryException ex) {
@@ -481,7 +485,7 @@ public class Androlib {
             File apkDir = new File(appDir, APK_DIRNAME);
 
             if (apkOptions.debugMode) {
-                mAndRes.remove_application_debug(new File(apkDir,"AndroidManifest.xml").getAbsolutePath());
+                ResXmlPatcher.removeApplicationDebugTag(new File(apkDir,"AndroidManifest.xml"));
             }
 
             if (apkOptions.forceBuildAll || isModified(newFiles(APK_MANIFEST_FILENAMES, appDir),
@@ -513,15 +517,24 @@ public class Androlib {
         }
     }
 
-    public void buildLib(File appDir)
-            throws AndrolibException {
-        File working = new File(appDir, "lib");
-        if (!working.exists()) {
+    public void buildLib(File appDir) throws AndrolibException {
+        buildLibrary(appDir, "lib");
+    }
+
+    public void buildLibs(File appDir) throws AndrolibException {
+        buildLibrary(appDir, "libs");
+    }
+
+    public void buildLibrary(File appDir, String folder) throws AndrolibException {
+        File working = new File(appDir, folder);
+
+        if (! working.exists()) {
             return;
         }
-        File stored = new File(appDir, APK_DIRNAME + "/lib");
+
+        File stored = new File(appDir, APK_DIRNAME + "/" + folder);
         if (apkOptions.forceBuildAll || isModified(working, stored)) {
-            LOGGER.info("Copying libs...");
+            LOGGER.info("Copying libs... (/" + folder + ")");
             try {
                 OS.rmdir(stored);
                 OS.cpdir(working, stored);
@@ -568,11 +581,10 @@ public class Androlib {
 
             try (
                     ZipFile inputFile = new ZipFile(tempFile);
-                    ZipOutputStream actualOutput = new ZipOutputStream(new FileOutputStream(outFile));
+                    ZipOutputStream actualOutput = new ZipOutputStream(new FileOutputStream(outFile))
             ) {
-                byte[] buffer = new byte[4096 * 1024];
-                copyExistingFiles(inputFile, actualOutput, buffer);
-                copyUnknownFiles(appDir, actualOutput, files, buffer);
+                copyExistingFiles(inputFile, actualOutput);
+                copyUnknownFiles(appDir, actualOutput, files);
             } catch (IOException ex) {
                 throw new AndrolibException(ex);
             }
@@ -582,54 +594,52 @@ public class Androlib {
         }
     }
 
-    private void copyExistingFiles(ZipFile inputFile, ZipOutputStream outputFile, byte[] buffer) throws IOException {
+    private void copyExistingFiles(ZipFile inputFile, ZipOutputStream outputFile) throws IOException {
         // First, copy the contents from the existing outFile:
         Enumeration<? extends ZipEntry> entries = inputFile.entries();
         while (entries.hasMoreElements()) {
             ZipEntry entry = new ZipEntry(entries.nextElement());
+
             // We can't reuse the compressed size because it depends on compression sizes.
             entry.setCompressedSize(-1);
             outputFile.putNextEntry(entry);
 
             // No need to create directory entries in the final apk
-            if (!entry.isDirectory()) {
-                BrutIO.copy(inputFile.getInputStream(entry), outputFile, buffer);
+            if (! entry.isDirectory()) {
+                BrutIO.copy(inputFile, outputFile, entry);
             }
 
             outputFile.closeEntry();
         }
     }
 
-    private void copyUnknownFiles(File appDir, ZipOutputStream outputFile, Map<String, String> files, byte[] buffer)
+    private void copyUnknownFiles(File appDir, ZipOutputStream outputFile, Map<String, String> files)
             throws IOException {
         File unknownFileDir = new File(appDir, UNK_DIRNAME);
 
         // loop through unknown files
         for (Map.Entry<String,String> unknownFileInfo : files.entrySet()) {
             File inputFile = new File(unknownFileDir, unknownFileInfo.getKey());
-            if(inputFile.isDirectory()) {
+            if (inputFile.isDirectory()) {
                 continue;
             }
 
             ZipEntry newEntry = new ZipEntry(unknownFileInfo.getKey());
             int method = Integer.valueOf(unknownFileInfo.getValue());
             LOGGER.fine(String.format("Copying unknown file %s with method %d", unknownFileInfo.getKey(), method));
-            if(method == ZipEntry.STORED) {
+            if (method == ZipEntry.STORED) {
                 newEntry.setMethod(ZipEntry.STORED);
                 newEntry.setSize(inputFile.length());
                 newEntry.setCompressedSize(-1);
                 BufferedInputStream unknownFile = new BufferedInputStream(new FileInputStream(inputFile));
-                CRC32 crc = BrutIO.calculateCrc(unknownFile, buffer);
+                CRC32 crc = BrutIO.calculateCrc(unknownFile);
                 newEntry.setCrc(crc.getValue());
-
-                LOGGER.fine("\tsize: " + newEntry.getSize());
             } else {
                 newEntry.setMethod(ZipEntry.DEFLATED);
             }
             outputFile.putNextEntry(newEntry);
 
-            BufferedInputStream unknownFile = new BufferedInputStream(new FileInputStream(inputFile));
-            BrutIO.copy(unknownFile, outputFile, buffer);
+            BrutIO.copy(inputFile, outputFile);
             outputFile.closeEntry();
         }
     }
